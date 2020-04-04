@@ -36,18 +36,13 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     if (!PyArg_ParseTuple(args, "Os", &o, &path))
         return NULL;
 
-    printf("Write to: %s\n", path);
-
     pbheader_t header = PBHEADER_INIT;
 
     int i;
     int l;
-    
     int j;
 
     l = PyList_Size(o);
-
-    printf("Got %d devices\n", l);
 
     FILE *f;
     f = fopen(path, "wb");
@@ -150,8 +145,13 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     return result;
 }
 
+// ****************
+// *UNPACK TO LIST*
+// ****************
+
+
 // Unpack only messages with type == DEVICE_APPS_TYPE
-// Return iterator of Python dicts
+// Return list of Python dicts
 static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
     DeviceApps *msg;
     DeviceApps__Device *device = DEVICE_APPS__DEVICE__INIT;
@@ -248,13 +248,186 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 
 
 
+// ********************
+// *UNPACK TO ITERATOR*
+// ********************
+
+
+typedef struct {
+    PyObject_HEAD
+    FILE *f;
+} PBGen;
+
+
+PyObject* PBGen_dealloc(PBGen* pbgen) {
+    fclose(pbgen->f);
+}
+
+
+static PyObject *
+PBGen_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
+{
+    PyObject *py_file;
+
+    if (!PyArg_UnpackTuple(args, "pbgen", 1, 1, &py_file))
+        return NULL;
+    if (!PyString_Check(py_file)) {
+        PyErr_SetString(PyExc_TypeError, "pbgen() expects a file path");
+        return NULL;
+    }
+
+    PBGen *pbgen = (PBGen *)type->tp_alloc(type, 0);
+    if (!pbgen)
+        return NULL;
+
+    pbgen->f = fopen(PyString_AsString(py_file), "rb");
+
+    return (PyObject *)pbgen;
+}
+
+
+PyObject* PBGen_next(PBGen* pbgen) {
+    DeviceApps *msg;
+    DeviceApps__Device *device = DEVICE_APPS__DEVICE__INIT;
+
+    int n_apps;
+
+    PyObject *py_deviceapp;
+    PyObject *py_device;
+    PyObject *py_apps;
+    PyObject *py_app;
+    PyObject *py_device_id;
+    PyObject *py_device_type;
+    PyObject *py_lat;
+    PyObject *py_lon;
+
+	void* buf;
+    pbheader_t header = PBHEADER_INIT;
+
+    while (1) {
+	    fread(&header, sizeof(pbheader_t), 1, pbgen->f);
+	    if (feof(pbgen->f))
+	    	return NULL;
+	    if (header.type == DEVICE_APPS_TYPE){
+	    	break;
+    	}
+    }
+
+    buf = malloc(header.length);
+    fread(buf, header.length, 1, pbgen->f);
+
+	msg = device_apps__unpack(NULL, header.length, buf);
+	
+	device = msg->device;
+	n_apps = msg->n_apps;
+
+	int j;
+	py_apps = PyList_New(0);
+	for(j = 0; j < n_apps; j++){
+		py_app = PyInt_FromLong(msg->apps[j]);
+    	PyList_Append(py_apps, py_app);
+    	Py_DECREF(py_app);
+	}
+
+    py_device = PyDict_New();
+    if (device->has_id==1){
+		py_device_id = PyString_FromStringAndSize(device->id.data, device->id.len);
+		PyDict_SetItemString(py_device, "id", py_device_id);
+		Py_DECREF(py_device_id);
+	}
+
+	if (device->has_type==1){
+		py_device_type = PyString_FromStringAndSize(device->type.data, device->type.len);
+		PyDict_SetItemString(py_device, "type", py_device_type);
+		Py_DECREF(py_device_type);
+	}
+
+
+	py_deviceapp = PyDict_New();
+	PyDict_SetItemString(py_deviceapp, "device", py_device);
+	Py_DECREF(py_device);
+
+    if (msg->has_lat==1){
+		py_lat = PyFloat_FromDouble(msg->lat);	
+		PyDict_SetItemString(py_deviceapp, "lat", py_lat);
+		Py_DECREF(py_lat);
+	}
+
+	if (msg->has_lon==1){
+		py_lon = PyFloat_FromDouble(msg->lon);
+		PyDict_SetItemString(py_deviceapp, "lon", py_lon);
+		Py_DECREF(py_lon);
+	}
+	PyDict_SetItemString(py_deviceapp, "apps", py_apps);
+	Py_DECREF(py_apps);
+
+    device_apps__free_unpacked(msg, NULL);
+	
+	free(buf);
+	return py_deviceapp;    
+};
+
+
+PyTypeObject PBGen_Type = {
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    "pbgen",                       /* tp_name */
+    sizeof(PBGen),            /* tp_basicsize */
+    0,                              /* tp_itemsize */
+    (destructor) PBGen_dealloc,     /* tp_dealloc */
+    0,                              /* tp_print */
+    0,                              /* tp_getattr */
+    0,                              /* tp_setattr */
+    0,                              /* tp_reserved */
+    0,                              /* tp_repr */
+    0,                              /* tp_as_number */
+    0,                              /* tp_as_sequence */
+    0,                              /* tp_as_mapping */
+    0,                              /* tp_hash */
+    0,                              /* tp_call */
+    0,                              /* tp_str */
+    0,                              /* tp_getattro */
+    0,                              /* tp_setattro */
+    0,                              /* tp_as_buffer */
+    Py_TPFLAGS_DEFAULT,             /* tp_flags */
+    0,                              /* tp_doc */
+    0,                              /* tp_traverse */
+    0,                              /* tp_clear */
+    0,                              /* tp_richcompare */
+    0,                              /* tp_weaklistoffset */
+    PyObject_SelfIter,              /* tp_iter */
+    (iternextfunc)PBGen_next,       /* tp_iternext */
+    0,                              /* tp_methods */
+    0,                              /* tp_members */
+    0,                              /* tp_getset */
+    0,                              /* tp_base */
+    0,                              /* tp_dict */
+    0,                              /* tp_descr_get */
+    0,                              /* tp_descr_set */
+    0,                              /* tp_dictoffset */
+    0,                              /* tp_init */
+    PyType_GenericAlloc,            /* tp_alloc */
+    PBGen_new,                      /* tp_new */
+};
+
+
+
+
+// Unpack only messages with type == DEVICE_APPS_TYPE
+// Return iterator of Python dicts
+static PyObject* py_deviceapps_xread_pb(PyObject* self, PyObject* args) {
+    return PyObject_CallObject((PyObject *) &PBGen_Type, args);
+};
+
+
 static PyMethodDef PBMethods[] = {
      {"deviceapps_xwrite_pb", py_deviceapps_xwrite_pb, METH_VARARGS, "Write serialized protobuf to file fro iterator"},
      {"deviceapps_xread_list_pb", py_deviceapps_xread_list_pb, METH_VARARGS, "Deserialize protobuf from file, return list"},
+     {"deviceapps_xread_pb", py_deviceapps_xread_pb, METH_VARARGS, "Deserialize protobuf from file, return iterator"},
      {NULL, NULL, 0, NULL}
 };
 
 
 PyMODINIT_FUNC initpb(void) {
-     (void) Py_InitModule("pb", PBMethods);
+	(void) Py_InitModule("pb", PBMethods);
 }
+

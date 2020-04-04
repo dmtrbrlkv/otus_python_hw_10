@@ -48,5 +48,9 @@ class TestPB(unittest.TestCase):
 
     def test_read(self):        
         pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
+
         for i, d in enumerate(pb.deviceapps_xread_list_pb(TEST_FILE)):
+            self.assertEqual(d, self.deviceapps[i])
+
+        for i, d in enumerate(pb.deviceapps_xread_pb(TEST_FILE)):
             self.assertEqual(d, self.deviceapps[i])
