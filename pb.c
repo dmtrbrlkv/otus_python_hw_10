@@ -47,6 +47,12 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
     FILE *f;
     f = fopen(path, "wb");
 
+    if(!f){
+    	PyErr_Format(PyExc_OSError, "No such file: %s", path);
+        return NULL;
+    }
+
+
     for (i=0; i<l; i++) {
     	PyObject* py_device_info = PyList_GetItem(o, i);
     	
@@ -142,6 +148,7 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
    
 
     PyObject * result = Py_BuildValue("l",total_size);
+
     return result;
 }
 
@@ -176,6 +183,10 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 
     FILE *f;
     f = fopen(path, "rb");
+    if(!f){
+    	PyErr_Format(PyExc_OSError, "No such file: %s", path);
+        return NULL;
+    }
 	void* buf;
 
     pbheader_t header = PBHEADER_INIT;
@@ -281,6 +292,10 @@ PBGen_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
         return NULL;
 
     pbgen->f = fopen(PyString_AsString(py_file), "rb");
+    if(!pbgen->f){
+    	PyErr_Format(PyExc_OSError, "No such file: %s", PyString_AsString(py_file));
+        return NULL;
+    }
 
     return (PyObject *)pbgen;
 }

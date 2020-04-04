@@ -7,7 +7,7 @@ MAGIC = 0xFFFFFFFF
 HEADER_FORMAT = "IHH"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 DEVICE_APPS_TYPE = 1
-TEST_FILE = "test.pb.gz"
+TEST_FILE = "test.pb"
 
 
 class TestPB(unittest.TestCase):
@@ -20,8 +20,7 @@ class TestPB(unittest.TestCase):
     ]
 
     def tearDown(self):
-        pass
-        # os.remove(TEST_FILE)
+        os.remove(TEST_FILE)
 
     def test_write(self):
         bytes_written = pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
