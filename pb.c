@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "deviceapps.pb-c.h"
+#include <zlib.h>
 
 #define MAGIC  0xFFFFFFFF
 #define DEVICE_APPS_TYPE 1
@@ -44,8 +45,8 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
     l = PyList_Size(o);
 
-    FILE *f;
-    f = fopen(path, "wb");
+    gzFile f;
+    f = gzopen(path, "w6h");
 
     if(!f){
     	PyErr_Format(PyExc_OSError, "No such file: %s", path);
@@ -55,10 +56,10 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
     for (i=0; i<l; i++) {
     	PyObject* py_device_info = PyList_GetItem(o, i);
-    	
+
     	PyObject* py_device = PyDict_GetItemString(py_device_info, "device");
 
-    
+
     	PyObject* py_apps = PyDict_GetItemString(py_device_info, "apps");
     	n_apps = PyList_Size(py_apps);
 
@@ -87,10 +88,10 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 		}
 		else
 			device.has_type = 0;
-		
+
 
     	PyStringObject* py_device_id = PyDict_GetItemString(py_device, "id");
-    	if (py_device_type){	
+    	if (py_device_type){
 	    	device_id = PyString_AsString(py_device_id);
 		    device.has_id = 1;
 		    device.id.data = (uint8_t*)device_id;
@@ -99,12 +100,12 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 		else
 			device.has_id = 0;
 
-	    
+
 	    msg.device = &device;
 
 
 	    PyObject* py_lat = PyDict_GetItemString(py_device_info, "lat");
-	    if (py_lat){	
+	    if (py_lat){
 	    	lat = PyFloat_AsDouble(py_lat);
 	    	msg.has_lat = 1;
 	    	msg.lat = lat;
@@ -113,8 +114,8 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 	    	msg.has_lat = 0;
 
 	    PyObject* py_lon = PyDict_GetItemString(py_device_info, "lon");
-    	
-	    if (py_lon){	
+
+	    if (py_lon){
 	    	lon = PyFloat_AsDouble(py_lon);
 	    	msg.has_lon = 1;
 	    	msg.lon = lon;
@@ -133,10 +134,10 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
 	    header.type = DEVICE_APPS_TYPE;
 	    header.length = len;
-	    fwrite(&header, sizeof(pbheader_t), 1, f);
+	    gzwrite(f, &header, sizeof(pbheader_t));
 	    total_size += sizeof(pbheader_t);
 
-	    fwrite(buf, len, 1, f);
+	    gzwrite(f, buf, len);
 	    total_size += len;
 
 	    free(msg.apps);
@@ -144,8 +145,8 @@ static PyObject* py_deviceapps_xwrite_pb(PyObject* self, PyObject* args) {
 
     }
 
-    fclose(f);
-   
+    gzclose(f);
+
 
     PyObject * result = Py_BuildValue("l",total_size);
 
@@ -181,8 +182,8 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 
     py_deviceapps = PyList_New(0);
 
-    FILE *f;
-    f = fopen(path, "rb");
+    gzFile f = gzopen(path, "r");
+
     if(!f){
     	PyErr_Format(PyExc_OSError, "No such file: %s", path);
         return NULL;
@@ -190,17 +191,22 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 	void* buf;
 
     pbheader_t header = PBHEADER_INIT;
-    int cb;
+    int status;
 
     while (1) {
-	    fread(&header, sizeof(pbheader_t), 1, f);
-	    if (feof(f))
+	    status = gzread(f, &header, sizeof(pbheader_t));
+	    if (status == Z_STREAM_END)
 	    	break;
+
+	    if (status == 0)
+	    	break;
+
 	    buf = malloc(header.length);
-	    fread(buf, header.length, 1, f);
+	    status = gzread(f, buf, header.length);
+
     	if (header.type == DEVICE_APPS_TYPE){
 	    	msg = device_apps__unpack(NULL, header.length, buf);
-	    	
+
 	    	device = msg->device;
 	    	n_apps = msg->n_apps;
 
@@ -211,6 +217,7 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 		    	PyList_Append(py_apps, py_app);
 		    	Py_DECREF(py_app);
 	    	}
+
 
 		    py_device = PyDict_New();
 		    if (device->has_id==1){
@@ -230,7 +237,7 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 			Py_DECREF(py_device);
 
 		    if (msg->has_lat==1){
-	    		py_lat = PyFloat_FromDouble(msg->lat);	
+	    		py_lat = PyFloat_FromDouble(msg->lat);
 	    		PyDict_SetItemString(py_deviceapp, "lat", py_lat);
 				Py_DECREF(py_lat);
 			}
@@ -247,13 +254,14 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 		    Py_DECREF(py_deviceapp);
 
 		    device_apps__free_unpacked(msg, NULL);
-	    	
+
     	}
-    	free(buf);    	
+
+    	free(buf);
 
 	}
 
-	fclose(f);
+	gzclose(f);
     return py_deviceapps;
 }
 
@@ -266,12 +274,12 @@ static PyObject* py_deviceapps_xread_list_pb(PyObject* self, PyObject* args) {
 
 typedef struct {
     PyObject_HEAD
-    FILE *f;
+    gzFile f;
 } PBGen;
 
 
 PyObject* PBGen_dealloc(PBGen* pbgen) {
-    fclose(pbgen->f);
+    gzclose(pbgen->f);
 }
 
 
@@ -291,7 +299,7 @@ PBGen_new(PyTypeObject *type, PyObject *args, PyObject *kwargs)
     if (!pbgen)
         return NULL;
 
-    pbgen->f = fopen(PyString_AsString(py_file), "rb");
+    pbgen->f = gzopen(PyString_AsString(py_file), "r");
     if(!pbgen->f){
     	PyErr_Format(PyExc_OSError, "No such file: %s", PyString_AsString(py_file));
         return NULL;
@@ -319,20 +327,26 @@ PyObject* PBGen_next(PBGen* pbgen) {
 	void* buf;
     pbheader_t header = PBHEADER_INIT;
 
+    int status;
+
     while (1) {
-	    fread(&header, sizeof(pbheader_t), 1, pbgen->f);
-	    if (feof(pbgen->f))
+	    status = gzread(pbgen->f, &header, sizeof(pbheader_t));
+	    if (status == Z_STREAM_END)
 	    	return NULL;
+
+	    if (status == 0)
+	    	return NULL;
+
 	    if (header.type == DEVICE_APPS_TYPE){
 	    	break;
     	}
     }
 
     buf = malloc(header.length);
-    fread(buf, header.length, 1, pbgen->f);
+    gzread(pbgen->f, buf, header.length);
 
 	msg = device_apps__unpack(NULL, header.length, buf);
-	
+
 	device = msg->device;
 	n_apps = msg->n_apps;
 
@@ -363,7 +377,7 @@ PyObject* PBGen_next(PBGen* pbgen) {
 	Py_DECREF(py_device);
 
     if (msg->has_lat==1){
-		py_lat = PyFloat_FromDouble(msg->lat);	
+		py_lat = PyFloat_FromDouble(msg->lat);
 		PyDict_SetItemString(py_deviceapp, "lat", py_lat);
 		Py_DECREF(py_lat);
 	}
@@ -377,9 +391,9 @@ PyObject* PBGen_next(PBGen* pbgen) {
 	Py_DECREF(py_apps);
 
     device_apps__free_unpacked(msg, NULL);
-	
+
 	free(buf);
-	return py_deviceapp;    
+	return py_deviceapp;
 };
 
 

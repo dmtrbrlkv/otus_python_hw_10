@@ -1,13 +1,14 @@
 import os
 import unittest
 import struct
+import gzip
 
 import pb
 MAGIC = 0xFFFFFFFF
 HEADER_FORMAT = "IHH"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 DEVICE_APPS_TYPE = 1
-TEST_FILE = "test.pb"
+TEST_FILE = "test.pb.gz"
 
 
 class TestPB(unittest.TestCase):
@@ -28,7 +29,7 @@ class TestPB(unittest.TestCase):
 
         n_msg = 0
         size_msg = 0
-        with open(TEST_FILE, "rb") as f:
+        with gzip.open(TEST_FILE, "r") as f:
             while True:
                 buf = f.read(HEADER_SIZE)
                 if not buf:
@@ -45,7 +46,7 @@ class TestPB(unittest.TestCase):
         self.assertEqual(size_msg, bytes_written)
 
 
-    def test_read(self):        
+    def test_read(self):
         pb.deviceapps_xwrite_pb(self.deviceapps, TEST_FILE)
 
         for i, d in enumerate(pb.deviceapps_xread_list_pb(TEST_FILE)):
